@@ -186,6 +186,11 @@ if __name__ == "__main__":
         default=False,
         action='store_true',
         help='verbose')
+    parser.add_argument(
+        '-C',
+        default=False,
+        action='store_true',
+        help='Execute Heuristics for Clean Results')
     args = parser.parse_args()
 
     plot = args.P
@@ -281,10 +286,11 @@ if __name__ == "__main__":
             if trig[1] == trig[0]:
                 continue
             pick = np.argmax(ts[trig[0]:trig[1], 0])+trig[0]
-            if not is_this_a_trigger(pick,st,10,400,400):
+            if(args.C and (not is_this_a_trigger(pick,st,10,400,400))):
                 continue
             # pick becomes valid here
-            s_search_space.append(pick)
+            if(args.C):
+                s_search_space.append(pick)
             stamp_pick = st[0].stats.starttime + tt[pick]
             p_picks.append(stamp_pick)
             ofile.write("%s %s P %s\n" % (net, sta, stamp_pick.isoformat()))
@@ -302,9 +308,9 @@ if __name__ == "__main__":
                 continue
             pick = np.argmax(ts[trig[0]:trig[1], 1])+trig[0]
             # Was there a P wave before
-            if(not search_space_check(s_search_space,pick)):
+            if(args.C and (not search_space_check(s_search_space,pick))):
                 continue
-            if not is_this_a_trigger(pick,st,1,400,400):
+            if(args.C and (not is_this_a_trigger(pick,st,1,400,400))):
                 continue
             stamp_pick = st[0].stats.starttime + tt[pick]
             s_picks.append(stamp_pick)
