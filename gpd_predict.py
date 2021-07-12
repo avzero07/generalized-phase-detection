@@ -1,13 +1,13 @@
 #! /bin/env python
-# Automatic picking of seismic waves using Generalized Phase Detection 
+# Automatic picking of seismic waves using Generalized Phase Detection
 # See http://scedc.caltech.edu/research-tools/deeplearning.html for more info
 #
 # Ross et al. (2018), Generalized Seismic Phase Detection with Deep Learning,
 #                     Bull. Seismol. Soc. Am., doi:10.1785/0120180080
-#                                              
-# Author: Zachary E. Ross (2018)                
-# Contact: zross@gps.caltech.edu                        
-# Website: http://www.seismolab.caltech.edu/ross_z.html         
+#
+# Author: Zachary E. Ross (2018)
+# Contact: zross@gps.caltech.edu
+# Website: http://www.seismolab.caltech.edu/ross_z.html
 
 import string
 import time
@@ -30,13 +30,13 @@ mpl.rcParams['pdf.fonttype'] = 42
 
 #####################
 # Hyperparameters
-min_proba = 0.95 # Minimum softmax probability for phase detection
+min_proba = 0.94 # Minimum softmax probability for phase detection
 freq_min = 3.0
 freq_max = 20.0
 filter_data = True
 decimate_data = False # If false, assumes data is already 100 Hz samprate
 n_shift = 10 # Number of samples to shift the sliding window at a time
-n_gpu = 3 # Number of GPUs to use (if any)
+n_gpu = 1 # Number of GPUs to use (if any)
 #####################
 batch_size = 1000*3
 
@@ -117,6 +117,49 @@ def sliding_window(data, size, stepsize=1, padded=False, axis=-1, copy=True):
         return strided.copy()
     else:
         return strided
+
+
+def is_this_a_trigger(pick,stream,thresh=5,
+                        forward_range=400,reverse_range=400):
+    # Get Windows before and after pick
+    pre_window = list()
+    post_window = list()
+    for trace in stream:
+        pre_window.append(trace.data[10*pick-reverse_range:10*pick])
+        post_window.append(trace.data[10*pick:10*pick+forward_range])
+
+    # NP
+    pre_window_metric = np.max(np.abs(np.array(pre_window)))
+    post_window_metric = np.max(np.abs(np.array(post_window)))
+    ratio = post_window_metric/pre_window_metric
+    print(ratio)
+    '''
+    if(pick == 6178):
+        print(pre_window)
+        print(post_window)
+    '''
+    if(ratio > thresh):
+        return True
+    return False
+
+def search_space_check(s_search_space,s_pick,max_distance=1000):
+    '''
+    Function to make sure the search for S pick is efficient.
+    '''
+    if(len(s_search_space)==0):
+        return False
+
+    while(len(s_search_space)):
+        p = s_search_space[0]
+        if(p >= s_pick):
+            return False
+
+        else:
+            if((s_pick - p)>max_distance):
+                s_search_space.pop(0)
+                continue
+            else:
+                return True
 
 if __name__ == "__main__":
     parser = ap.ArgumentParser(
@@ -232,20 +275,37 @@ if __name__ == "__main__":
         from obspy.signal.trigger import trigger_onset
         trigs = trigger_onset(prob_P, min_proba, 0.1)
         p_picks = []
+        s_search_space = []
         s_picks = []
         for trig in trigs:
             if trig[1] == trig[0]:
                 continue
             pick = np.argmax(ts[trig[0]:trig[1], 0])+trig[0]
+            if not is_this_a_trigger(pick,st,10,400,400):
+                continue
+            # pick becomes valid here
+            s_search_space.append(pick)
             stamp_pick = st[0].stats.starttime + tt[pick]
             p_picks.append(stamp_pick)
             ofile.write("%s %s P %s\n" % (net, sta, stamp_pick.isoformat()))
 
+        # Search Space Logic for S Wave
+        '''
+        An S wave should occur only within the range of a P wave so
+        set a valid search space whenever P Waves are encountered.
+        '''
+        print("s trigger")
         trigs = trigger_onset(prob_S, min_proba, 0.1)
         for trig in trigs:
+            # TODO: Don't proceed if s_search_space is empty
             if trig[1] == trig[0]:
                 continue
             pick = np.argmax(ts[trig[0]:trig[1], 1])+trig[0]
+            # Was there a P wave before
+            if(not search_space_check(s_search_space,pick)):
+                continue
+            if not is_this_a_trigger(pick,st,1,400,400):
+                continue
             stamp_pick = st[0].stats.starttime + tt[pick]
             s_picks.append(stamp_pick)
             ofile.write("%s %s S %s\n" % (net, sta, stamp_pick.isoformat()))
@@ -271,3 +331,4 @@ if __name__ == "__main__":
             plt.tight_layout()
             plt.show()
     ofile.close()
+
