@@ -191,6 +191,11 @@ if __name__ == "__main__":
         default=False,
         action='store_true',
         help='Execute Heuristics for Clean Results')
+    parser.add_argument(
+        '-S',
+        type=str,
+        default=None,
+        help='Figure Output')
     args = parser.parse_args()
 
     plot = args.P
@@ -317,7 +322,7 @@ if __name__ == "__main__":
             ofile.write("%s %s S %s\n" % (net, sta, stamp_pick.isoformat()))
 
         if plot:
-            fig = plt.figure(figsize=(8, 12))
+            fig = plt.figure(figsize=(20, 12))
             ax = []
             ax.append(fig.add_subplot(4,1,1))
             ax.append(fig.add_subplot(4,1,2,sharex=ax[0],sharey=ax[0]))
@@ -325,16 +330,41 @@ if __name__ == "__main__":
             ax.append(fig.add_subplot(4,1,4,sharex=ax[0]))
             for i in range(3):
                 ax[i].plot(np.arange(st[i].data.size)*dt, st[i].data, c='k', \
-                           lw=0.5)
+                           lw=0.5,label='{}'.format(st[i].stats.channel))
+                ax[i].legend()
+                if(i==0):
+                    ax[0].set_title("Station: {} - P/S Onset".format(st[0].stats.station))
             ax[3].plot(tt, ts[:,0], c='r', lw=0.5)
             ax[3].plot(tt, ts[:,1], c='b', lw=0.5)
+            p_onset_flag = 0
             for p_pick in p_picks:
                 for i in range(3):
-                    ax[i].axvline(p_pick-st[0].stats.starttime, c='r', lw=0.5)
+                    if(p_onset_flag == 0):
+                        ax[i].axvline(p_pick-st[0].stats.starttime, c='r',
+                            lw=0.5,label='P Onset')
+                    else:
+                        ax[i].axvline(p_pick-st[0].stats.starttime, c='r',
+                            lw=0.5)
+                    ax[i].legend()
+                if(p_onset_flag==0):
+                    p_onset_flag=1
+
+            s_onset_flag = 0
             for s_pick in s_picks:
                 for i in range(3):
-                    ax[i].axvline(s_pick-st[0].stats.starttime, c='b', lw=0.5)
+                    if(s_onset_flag == 0):
+                        ax[i].axvline(s_pick-st[0].stats.starttime, c='b',
+                            lw=0.5,label='S Onset')
+                    else:
+                        ax[i].axvline(s_pick-st[0].stats.starttime, c='b',
+                            lw=0.5)
+                    ax[i].legend()
+                if(s_onset_flag==0):
+                    s_onset_flag=1
             plt.tight_layout()
-            plt.show()
+            if(args.S):
+                fig.savefig(args.S,dpi=fig.dpi)
+            else:
+                plt.show()
     ofile.close()
 
