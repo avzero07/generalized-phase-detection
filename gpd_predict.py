@@ -9,6 +9,9 @@
 # Contact: zross@gps.caltech.edu
 # Website: http://www.seismolab.caltech.edu/ross_z.html
 
+# Modified by Akshay Viswakumar (2021)
+# Contact: akshay.viswakumar@gmail.com
+
 import string
 import time
 import argparse as ap
@@ -132,7 +135,7 @@ def is_this_a_trigger(pick,stream,thresh=5,
     pre_window_metric = np.max(np.abs(np.array(pre_window)))
     post_window_metric = np.max(np.abs(np.array(post_window)))
     ratio = post_window_metric/pre_window_metric
-    print(ratio)
+    #print(ratio)
     '''
     if(pick == 6178):
         print(pre_window)
@@ -305,7 +308,7 @@ if __name__ == "__main__":
         An S wave should occur only within the range of a P wave so
         set a valid search space whenever P Waves are encountered.
         '''
-        print("s trigger")
+        #print("s trigger")
         trigs = trigger_onset(prob_S, min_proba, 0.1)
         for trig in trigs:
             # TODO: Don't proceed if s_search_space is empty
@@ -322,7 +325,7 @@ if __name__ == "__main__":
             ofile.write("%s %s S %s\n" % (net, sta, stamp_pick.isoformat()))
 
         if plot:
-            fig = plt.figure(figsize=(20, 12))
+            fig = plt.figure(figsize=(10, 8))
             ax = []
             ax.append(fig.add_subplot(4,1,1))
             ax.append(fig.add_subplot(4,1,2,sharex=ax[0],sharey=ax[0]))
@@ -331,11 +334,28 @@ if __name__ == "__main__":
             for i in range(3):
                 ax[i].plot(np.arange(st[i].data.size)*dt, st[i].data, c='k', \
                            lw=0.5,label='{}'.format(st[i].stats.channel))
-                ax[i].legend()
+                ax[i].legend(loc='upper right')
                 if(i==0):
-                    ax[0].set_title("Station: {} - P/S Onset".format(st[0].stats.station))
-            ax[3].plot(tt, ts[:,0], c='r', lw=0.5)
-            ax[3].plot(tt, ts[:,1], c='b', lw=0.5)
+                    if args.C:
+                        ax[0].set_title("Station: {} - P/S Onset "
+                                "[Enhanced Results]".format(st[0].stats.station))
+                    else:
+                        ax[0].set_title("Station: {} - P/S Onset".format(st[0].stats.station))
+            ax[3].plot(tt, ts[:,0], c='r', lw=0.5,label='P(P onset)')
+            ax[3].plot(tt, ts[:,1], c='b', lw=0.5,label='P(S onset)')
+            ax[3].grid()
+            ax[3].legend(loc='upper right')
+            ax[3].set_xlabel('Time (Seconds)')
+            ax[3].set_ylabel('Probability')
+
+            # Accel vs Vel Y Label
+            y_label_list = list()
+            for i in range(3):
+                if('HH' in st[i].stats.channel):
+                    y_label_list.append('Digital Count - Velocity')
+                elif('HN' in st[i].stats.channel):
+                    y_label_list.append('Digital Count - Acceleration')
+
             p_onset_flag = 0
             for p_pick in p_picks:
                 for i in range(3):
@@ -345,7 +365,7 @@ if __name__ == "__main__":
                     else:
                         ax[i].axvline(p_pick-st[0].stats.starttime, c='r',
                             lw=0.5)
-                    ax[i].legend()
+                    ax[i].legend(loc='upper right')
                 if(p_onset_flag==0):
                     p_onset_flag=1
 
@@ -358,9 +378,15 @@ if __name__ == "__main__":
                     else:
                         ax[i].axvline(s_pick-st[0].stats.starttime, c='b',
                             lw=0.5)
-                    ax[i].legend()
+                    ax[i].legend(loc='upper right')
                 if(s_onset_flag==0):
                     s_onset_flag=1
+            ax[0].set_ylabel(y_label_list[0])
+            ax[0].grid()
+            ax[1].set_ylabel(y_label_list[1])
+            ax[1].grid()
+            ax[2].set_ylabel(y_label_list[2])
+            ax[2].grid()
             plt.tight_layout()
             if(args.S):
                 fig.savefig(args.S,dpi=fig.dpi)

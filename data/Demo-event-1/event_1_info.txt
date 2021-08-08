@@ -1,0 +1,5 @@
+Magnitude               :   6.0
+Event Source Latitude   :   +50.517
+Event Source Longitude  :   -129.757
+Event Time (UTC)        :   2019-12-23T20:56:23.555000Z
+Data Type               :   Velocity
