@@ -1,13 +1,16 @@
 #! /bin/env python
-# Automatic picking of seismic waves using Generalized Phase Detection 
+# Automatic picking of seismic waves using Generalized Phase Detection
 # See http://scedc.caltech.edu/research-tools/deeplearning.html for more info
 #
 # Ross et al. (2018), Generalized Seismic Phase Detection with Deep Learning,
 #                     Bull. Seismol. Soc. Am., doi:10.1785/0120180080
-#                                              
-# Author: Zachary E. Ross (2018)                
-# Contact: zross@gps.caltech.edu                        
-# Website: http://www.seismolab.caltech.edu/ross_z.html         
+#
+# Author: Zachary E. Ross (2018)
+# Contact: zross@gps.caltech.edu
+# Website: http://www.seismolab.caltech.edu/ross_z.html
+
+# Modified by Akshay Viswakumar (2021)
+# Contact: akshay.viswakumar@gmail.com
 
 import string
 import time
@@ -30,13 +33,13 @@ mpl.rcParams['pdf.fonttype'] = 42
 
 #####################
 # Hyperparameters
-min_proba = 0.95 # Minimum softmax probability for phase detection
+min_proba = 0.94 # Minimum softmax probability for phase detection
 freq_min = 3.0
 freq_max = 20.0
 filter_data = True
 decimate_data = False # If false, assumes data is already 100 Hz samprate
 n_shift = 10 # Number of samples to shift the sliding window at a time
-n_gpu = 3 # Number of GPUs to use (if any)
+n_gpu = 1 # Number of GPUs to use (if any)
 #####################
 batch_size = 1000*3
 
@@ -118,6 +121,49 @@ def sliding_window(data, size, stepsize=1, padded=False, axis=-1, copy=True):
     else:
         return strided
 
+
+def is_this_a_trigger(pick,stream,thresh=5,
+                        forward_range=400,reverse_range=400):
+    # Get Windows before and after pick
+    pre_window = list()
+    post_window = list()
+    for trace in stream:
+        pre_window.append(trace.data[10*pick-reverse_range:10*pick])
+        post_window.append(trace.data[10*pick:10*pick+forward_range])
+
+    # NP
+    pre_window_metric = np.max(np.abs(np.array(pre_window)))
+    post_window_metric = np.max(np.abs(np.array(post_window)))
+    ratio = post_window_metric/pre_window_metric
+    #print(ratio)
+    '''
+    if(pick == 6178):
+        print(pre_window)
+        print(post_window)
+    '''
+    if(ratio > thresh):
+        return True
+    return False
+
+def search_space_check(s_search_space,s_pick,max_distance=1000):
+    '''
+    Function to make sure the search for S pick is efficient.
+    '''
+    if(len(s_search_space)==0):
+        return False
+
+    while(len(s_search_space)):
+        p = s_search_space[0]
+        if(p >= s_pick):
+            return False
+
+        else:
+            if((s_pick - p)>max_distance):
+                s_search_space.pop(0)
+                continue
+            else:
+                return True
+
 if __name__ == "__main__":
     parser = ap.ArgumentParser(
         prog='gpd_predict.py',
@@ -143,6 +189,16 @@ if __name__ == "__main__":
         default=False,
         action='store_true',
         help='verbose')
+    parser.add_argument(
+        '-C',
+        default=False,
+        action='store_true',
+        help='Execute Heuristics for Clean Results')
+    parser.add_argument(
+        '-S',
+        type=str,
+        default=None,
+        help='Figure Output')
     args = parser.parse_args()
 
     plot = args.P
@@ -232,26 +288,44 @@ if __name__ == "__main__":
         from obspy.signal.trigger import trigger_onset
         trigs = trigger_onset(prob_P, min_proba, 0.1)
         p_picks = []
+        s_search_space = []
         s_picks = []
         for trig in trigs:
             if trig[1] == trig[0]:
                 continue
             pick = np.argmax(ts[trig[0]:trig[1], 0])+trig[0]
+            if(args.C and (not is_this_a_trigger(pick,st,10,400,400))):
+                continue
+            # pick becomes valid here
+            if(args.C):
+                s_search_space.append(pick)
             stamp_pick = st[0].stats.starttime + tt[pick]
             p_picks.append(stamp_pick)
             ofile.write("%s %s P %s\n" % (net, sta, stamp_pick.isoformat()))
 
+        # Search Space Logic for S Wave
+        '''
+        An S wave should occur only within the range of a P wave so
+        set a valid search space whenever P Waves are encountered.
+        '''
+        #print("s trigger")
         trigs = trigger_onset(prob_S, min_proba, 0.1)
         for trig in trigs:
+            # TODO: Don't proceed if s_search_space is empty
             if trig[1] == trig[0]:
                 continue
             pick = np.argmax(ts[trig[0]:trig[1], 1])+trig[0]
+            # Was there a P wave before
+            if(args.C and (not search_space_check(s_search_space,pick))):
+                continue
+            if(args.C and (not is_this_a_trigger(pick,st,1,400,400))):
+                continue
             stamp_pick = st[0].stats.starttime + tt[pick]
             s_picks.append(stamp_pick)
             ofile.write("%s %s S %s\n" % (net, sta, stamp_pick.isoformat()))
 
         if plot:
-            fig = plt.figure(figsize=(8, 12))
+            fig = plt.figure(figsize=(10, 8))
             ax = []
             ax.append(fig.add_subplot(4,1,1))
             ax.append(fig.add_subplot(4,1,2,sharex=ax[0],sharey=ax[0]))
@@ -259,15 +333,64 @@ if __name__ == "__main__":
             ax.append(fig.add_subplot(4,1,4,sharex=ax[0]))
             for i in range(3):
                 ax[i].plot(np.arange(st[i].data.size)*dt, st[i].data, c='k', \
-                           lw=0.5)
-            ax[3].plot(tt, ts[:,0], c='r', lw=0.5)
-            ax[3].plot(tt, ts[:,1], c='b', lw=0.5)
+                           lw=0.5,label='{}'.format(st[i].stats.channel))
+                ax[i].legend(loc='upper right')
+                if(i==0):
+                    if args.C:
+                        ax[0].set_title("Station: {} - P/S Onset "
+                                "[Enhanced Results]".format(st[0].stats.station))
+                    else:
+                        ax[0].set_title("Station: {} - P/S Onset".format(st[0].stats.station))
+            ax[3].plot(tt, ts[:,0], c='r', lw=0.5,label='P(P onset)')
+            ax[3].plot(tt, ts[:,1], c='b', lw=0.5,label='P(S onset)')
+            ax[3].grid()
+            ax[3].legend(loc='upper right')
+            ax[3].set_xlabel('Time (Seconds)')
+            ax[3].set_ylabel('Probability')
+
+            # Accel vs Vel Y Label
+            y_label_list = list()
+            for i in range(3):
+                if('HH' in st[i].stats.channel):
+                    y_label_list.append('Digital Count - Velocity')
+                elif('HN' in st[i].stats.channel):
+                    y_label_list.append('Digital Count - Acceleration')
+
+            p_onset_flag = 0
             for p_pick in p_picks:
                 for i in range(3):
-                    ax[i].axvline(p_pick-st[0].stats.starttime, c='r', lw=0.5)
+                    if(p_onset_flag == 0):
+                        ax[i].axvline(p_pick-st[0].stats.starttime, c='r',
+                            lw=0.5,label='P Onset')
+                    else:
+                        ax[i].axvline(p_pick-st[0].stats.starttime, c='r',
+                            lw=0.5)
+                    ax[i].legend(loc='upper right')
+                if(p_onset_flag==0):
+                    p_onset_flag=1
+
+            s_onset_flag = 0
             for s_pick in s_picks:
                 for i in range(3):
-                    ax[i].axvline(s_pick-st[0].stats.starttime, c='b', lw=0.5)
+                    if(s_onset_flag == 0):
+                        ax[i].axvline(s_pick-st[0].stats.starttime, c='b',
+                            lw=0.5,label='S Onset')
+                    else:
+                        ax[i].axvline(s_pick-st[0].stats.starttime, c='b',
+                            lw=0.5)
+                    ax[i].legend(loc='upper right')
+                if(s_onset_flag==0):
+                    s_onset_flag=1
+            ax[0].set_ylabel(y_label_list[0])
+            ax[0].grid()
+            ax[1].set_ylabel(y_label_list[1])
+            ax[1].grid()
+            ax[2].set_ylabel(y_label_list[2])
+            ax[2].grid()
             plt.tight_layout()
-            plt.show()
+            if(args.S):
+                fig.savefig(args.S,dpi=fig.dpi)
+            else:
+                plt.show()
     ofile.close()
+

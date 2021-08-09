@@ -1,0 +1,5 @@
+Magnitude               :   6.5
+Event Source Latitude   :   +49.051
+Event Source Longitude  :   -129.8831
+Event Time (UTC)        :   2018-10-22T06:22:45
+Data Type               :   Velocity
