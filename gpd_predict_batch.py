@@ -1,3 +1,7 @@
+'''
+Author: Akshay Viswakumar (2021)
+Contact: akshay.viswakumar@gmail.com
+'''
 import os
 import sys
 import subprocess as sp
